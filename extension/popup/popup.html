@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Colorist</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="colorist-container">
+    <!-- Header -->
+    <header class="header">
+      <h1>🎨 Colorist</h1>
+      <p class="tagline">Extract design patterns</p>
+    </header>
+
+    <!-- Input Methods -->
+    <section class="input-methods">
+      <button id="eyedropper-btn" class="method-btn primary">
+        <span class="icon">💧</span>
+        <span class="label">Pick Color</span>
+      </button>
+      
+      <div class="secondary-methods">
+        <button id="paste-btn" class="method-btn small">
+          <span class="icon">📋</span>
+          <span class="label">Paste</span>
+        </button>
+        <button id="upload-btn" class="method-btn small">
+          <span class="icon">📁</span>
+          <span class="label">Upload</span>
+        </button>
+      </div>
+      
+      <!-- Hidden file input -->
+      <input type="file" id="file-input" accept="image/*" hidden>
+    </section>
+
+    <!-- Drop Zone -->
+    <div id="drop-zone" class="drop-zone">
+      <p>Drop image here</p>
+    </div>
+
+    <!-- Current Color Display -->
+    <section id="current-color" class="current-color hidden">
+      <div id="color-preview" class="color-preview"></div>
+      <div class="color-values">
+        <div class="value-row">
+          <span class="label">HEX</span>
+          <span id="hex-value" class="value">#000000</span>
+          <button class="copy-btn" data-target="hex">📋</button>
+        </div>
+        <div class="value-row">
+          <span class="label">RGB</span>
+          <span id="rgb-value" class="value">rgb(0, 0, 0)</span>
+          <button class="copy-btn" data-target="rgb">📋</button>
+        </div>
+        <div class="value-row">
+          <span class="label">HSL</span>
+          <span id="hsl-value" class="value">hsl(0, 0%, 0%)</span>
+          <button class="copy-btn" data-target="hsl">📋</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Palette Display -->
+    <section id="palette-section" class="palette-section hidden">
+      <h2>Generated Palette</h2>
+      <div id="palette-colors" class="palette-colors">
+        <!-- Colors will be inserted here -->
+      </div>
+      <div class="palette-actions">
+        <button id="save-palette-btn" class="action-btn">💾 Save</button>
+        <button id="export-btn" class="action-btn">📤 Export</button>
+      </div>
+    </section>
+
+    <!-- Saved Palettes -->
+    <section id="saved-section" class="saved-section">
+      <h2>Saved Palettes</h2>
+      <div id="saved-palettes" class="saved-palettes">
+        <p class="empty-state">No saved palettes yet</p>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <span>v0.1.0</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

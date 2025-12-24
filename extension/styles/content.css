@@ -1,0 +1,47 @@
+/**
+ * Colorist Content Styles
+ * Injected into web pages
+ */
+
+/* Overlay when eyedropper is active */
+.colorist-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999999;
+  cursor: crosshair;
+  pointer-events: all;
+}
+
+/* Color tooltip */
+.colorist-tooltip {
+  position: fixed;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  pointer-events: none;
+  z-index: 1000000;
+  transform: translate(-50%, -100%);
+  margin-top: -10px;
+}
+
+.colorist-tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: rgba(0, 0, 0, 0.9);
+}
+
+/* Highlight on hover */
+.colorist-highlight {
+  outline: 2px dashed #667eea !important;
+  outline-offset: 2px;
+}
