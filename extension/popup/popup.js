@@ -475,11 +475,14 @@ async function extractColorsFromImage(imageSource) {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
 
-        // Scale down for performance
-        const maxSize = 100;
-        const scale = Math.min(maxSize / img.width, maxSize / img.height);
-        canvas.width = Math.max(1, img.width * scale);
-        canvas.height = Math.max(1, img.height * scale);
+        // Scale down for performance but keep enough detail for color extraction
+        // 200x200 gives us 40,000 pixels to sample - good balance
+        const maxSize = 200;
+        const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
+        canvas.width = Math.max(1, Math.floor(img.width * scale));
+        canvas.height = Math.max(1, Math.floor(img.height * scale));
+
+        console.log(`Colorist: Processing image ${img.width}x${img.height} → ${canvas.width}x${canvas.height}`);
 
         // Draw image
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -496,10 +499,12 @@ async function extractColorsFromImage(imageSource) {
         }
 
         const colors = extractDominantColors(imageData.data, 5);
+        console.log('Colorist: Extracted colors:', colors);
 
         // Check if we got valid colors (not all black/empty)
-        const allBlack = colors.every(c => c === '#000000' || c === '#202020');
+        const allBlack = colors.every(c => c === '#000000' || c === '#101010' || c === '#202020');
         if (colors.length === 0 || allBlack) {
+          console.error('Colorist: All colors are black, extraction failed');
           reject(new Error('Could not extract colors from image.'));
           return;
         }
@@ -531,40 +536,95 @@ async function extractColorsFromImage(imageSource) {
 
 /**
  * Extract dominant colors from pixel data
- * Simple implementation - can be improved with K-means
+ * Improved algorithm with better color distinction
  */
 function extractDominantColors(pixelData, count) {
   const colorCounts = {};
-  
-  // Sample every 4th pixel for performance
-  for (let i = 0; i < pixelData.length; i += 16) {
+  let totalPixels = 0;
+  let skippedTransparent = 0;
+  let skippedDark = 0;
+
+  // Sample every pixel (pixelData is RGBA, so step by 4)
+  for (let i = 0; i < pixelData.length; i += 4) {
+    totalPixels++;
     const r = pixelData[i];
     const g = pixelData[i + 1];
     const b = pixelData[i + 2];
     const a = pixelData[i + 3];
-    
+
     // Skip transparent pixels
-    if (a < 128) continue;
-    
-    // Quantize to reduce color space
-    const qr = Math.round(r / 32) * 32;
-    const qg = Math.round(g / 32) * 32;
-    const qb = Math.round(b / 32) * 32;
-    
+    if (a < 128) {
+      skippedTransparent++;
+      continue;
+    }
+
+    // Skip very dark pixels (often just noise/shadows)
+    if (r < 15 && g < 15 && b < 15) {
+      skippedDark++;
+      continue;
+    }
+
+    // Quantize with finer granularity (16 instead of 32)
+    // This gives 16^3 = 4096 possible colors instead of 729
+    const qr = Math.round(r / 16) * 16;
+    const qg = Math.round(g / 16) * 16;
+    const qb = Math.round(b / 16) * 16;
+
     const key = `${qr},${qg},${qb}`;
     colorCounts[key] = (colorCounts[key] || 0) + 1;
   }
-  
+
+  console.log(`Colorist: Analyzed ${totalPixels} pixels. Skipped: ${skippedTransparent} transparent, ${skippedDark} dark. Found ${Object.keys(colorCounts).length} unique colors.`);
+
   // Sort by frequency
   const sorted = Object.entries(colorCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, count);
-  
-  // Convert to hex
-  return sorted.map(([key]) => {
+    .sort((a, b) => b[1] - a[1]);
+
+  if (sorted.length > 0) {
+    console.log('Colorist: Top 10 colors by frequency:', sorted.slice(0, 10).map(([k, v]) => `${k} (${v})`));
+  }
+
+  // Select colors that are visually distinct from each other
+  const selectedColors = [];
+  const minDistance = 50; // Minimum color distance to consider "different"
+
+  for (const [key, freq] of sorted) {
+    if (selectedColors.length >= count) break;
+
     const [r, g, b] = key.split(',').map(Number);
-    return rgbToHex(r, g, b);
-  });
+
+    // Check if this color is different enough from already selected colors
+    const isDifferent = selectedColors.every(existing => {
+      const [er, eg, eb] = existing;
+      const distance = Math.sqrt(
+        Math.pow(r - er, 2) +
+        Math.pow(g - eg, 2) +
+        Math.pow(b - eb, 2)
+      );
+      return distance >= minDistance;
+    });
+
+    if (isDifferent) {
+      selectedColors.push([r, g, b]);
+    }
+  }
+
+  // If we didn't get enough distinct colors, fall back to just the top frequent ones
+  if (selectedColors.length < count) {
+    for (const [key] of sorted) {
+      if (selectedColors.length >= count) break;
+      const [r, g, b] = key.split(',').map(Number);
+      const exists = selectedColors.some(([er, eg, eb]) =>
+        er === r && eg === g && eb === b
+      );
+      if (!exists) {
+        selectedColors.push([r, g, b]);
+      }
+    }
+  }
+
+  // Convert to hex
+  return selectedColors.map(([r, g, b]) => rgbToHex(r, g, b));
 }
 
 /**
