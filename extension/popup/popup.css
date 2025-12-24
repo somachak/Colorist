@@ -28,10 +28,37 @@ body {
   border-bottom: 1px solid #e5e5e5;
 }
 
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  position: relative;
+}
+
 .header h1 {
   font-size: 20px;
   font-weight: 600;
   margin-bottom: 4px;
+}
+
+.refresh-btn {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.2s, transform 0.2s;
+  padding: 4px;
+}
+
+.refresh-btn:hover {
+  opacity: 1;
+  transform: translateY(-50%) rotate(180deg);
 }
 
 .tagline {

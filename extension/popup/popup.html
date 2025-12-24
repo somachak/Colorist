@@ -10,7 +10,10 @@
   <div class="colorist-container">
     <!-- Header -->
     <header class="header">
-      <h1>🎨 Colorist</h1>
+      <div class="header-row">
+        <h1>🎨 Colorist</h1>
+        <button id="refresh-btn" class="refresh-btn" title="Reset">🔄</button>
+      </div>
       <p class="tagline">Extract design patterns</p>
     </header>
 
@@ -22,7 +25,7 @@
       </button>
       
       <div class="secondary-methods">
-        <button id="paste-btn" class="method-btn small">
+        <button id="paste-btn" class="method-btn small" title="Paste color code or use Cmd/Ctrl+V for images">
           <span class="icon">📋</span>
           <span class="label">Paste</span>
         </button>

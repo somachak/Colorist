@@ -19,6 +19,10 @@ const paletteColors = document.getElementById('palette-colors');
 const savePaletteBtn = document.getElementById('save-palette-btn');
 const exportBtn = document.getElementById('export-btn');
 const savedPalettes = document.getElementById('saved-palettes');
+const refreshBtn = document.getElementById('refresh-btn');
+
+// Hidden paste target for clipboard handling
+let pasteTarget = null;
 
 // Current state
 let currentColor = null;
@@ -41,27 +45,38 @@ async function init() {
 function setupEventListeners() {
   // Eyedropper button
   eyedropperBtn.addEventListener('click', handleEyedropper);
-  
-  // Paste button
-  pasteBtn.addEventListener('click', handlePaste);
-  
+
+  // Paste button - now triggers focus on hidden paste area
+  pasteBtn.addEventListener('click', handlePasteClick);
+
   // Upload button
   uploadBtn.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', handleFileUpload);
-  
+
   // Drop zone
   dropZone.addEventListener('dragover', handleDragOver);
   dropZone.addEventListener('dragleave', handleDragLeave);
   dropZone.addEventListener('drop', handleDrop);
-  
+
   // Copy buttons
   document.querySelectorAll('.copy-btn').forEach(btn => {
     btn.addEventListener('click', handleCopy);
   });
-  
+
   // Palette actions
   savePaletteBtn.addEventListener('click', savePalette);
   exportBtn.addEventListener('click', exportPalette);
+
+  // Refresh button
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', handleRefresh);
+  }
+
+  // Set up hidden paste target for reliable clipboard handling
+  setupPasteTarget();
+
+  // Also listen for paste anywhere in the popup
+  document.addEventListener('paste', handlePasteEvent);
 }
 
 /**
@@ -90,41 +105,168 @@ async function handleEyedropper() {
 }
 
 /**
- * Handle paste from clipboard
+ * Set up hidden paste target element
+ * This allows us to reliably capture paste events with images
  */
-async function handlePaste() {
+function setupPasteTarget() {
+  // Create a hidden contenteditable div to receive paste events
+  pasteTarget = document.createElement('div');
+  pasteTarget.setAttribute('contenteditable', 'true');
+  pasteTarget.style.cssText = `
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  `;
+  document.body.appendChild(pasteTarget);
+}
+
+/**
+ * Handle paste button click
+ * Shows instructions and focuses the paste target
+ */
+function handlePasteClick() {
+  // First try the modern clipboard API for text
+  tryClipboardRead();
+}
+
+/**
+ * Try to read clipboard using the modern API
+ */
+async function tryClipboardRead() {
   try {
-    const clipboardItems = await navigator.clipboard.read();
-    
-    for (const item of clipboardItems) {
-      // Check for image
-      if (item.types.includes('image/png') || item.types.includes('image/jpeg')) {
+    // Try reading text first (most reliable)
+    const text = await navigator.clipboard.readText();
+    if (text && isValidColorCode(text.trim())) {
+      const cleanedColor = text.trim().startsWith('#') ? text.trim() : '#' + text.trim();
+      setCurrentColor(cleanedColor);
+      generatePalette(cleanedColor);
+      showNotification('Color pasted!');
+      return;
+    }
+
+    // Try reading images (less reliable, but worth trying)
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      for (const item of clipboardItems) {
         const imageType = item.types.find(t => t.startsWith('image/'));
-        const blob = await item.getType(imageType);
-        await extractColorsFromImage(blob);
-        return;
-      }
-      
-      // Check for text (might be a color code)
-      if (item.types.includes('text/plain')) {
-        const blob = await item.getType('text/plain');
-        const text = await blob.text();
-        
-        // Try to parse as color
-        if (isValidColorCode(text)) {
-          setCurrentColor(text);
-          generatePalette(text);
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          await extractColorsFromImage(blob);
+          showNotification('Colors extracted from image!');
           return;
         }
       }
+    } catch (imageErr) {
+      // Image reading failed, show helpful message
+      console.log('Image clipboard read not supported:', imageErr);
     }
-    
-    alert('No valid image or color code found in clipboard.');
-    
+
+    // If we got here, no valid content found
+    showNotification('No color or image found. Try Cmd/Ctrl+V after copying an image, or use Upload.', 'warning');
+
   } catch (err) {
-    console.error('Paste error:', err);
-    alert('Could not read clipboard. Please try again.');
+    console.error('Clipboard read error:', err);
+    showNotification('Cannot access clipboard. Use Cmd/Ctrl+V or drag & drop an image.', 'warning');
   }
+}
+
+/**
+ * Handle paste event (from Cmd/Ctrl+V)
+ * This is more reliable for images than the clipboard API
+ */
+function handlePasteEvent(event) {
+  const items = event.clipboardData?.items;
+  if (!items) return;
+
+  for (const item of items) {
+    // Handle images
+    if (item.type.startsWith('image/')) {
+      event.preventDefault();
+      const blob = item.getAsFile();
+      if (blob) {
+        extractColorsFromImage(blob);
+        showNotification('Colors extracted from image!');
+      }
+      return;
+    }
+
+    // Handle text (could be a color code)
+    if (item.type === 'text/plain') {
+      item.getAsString((text) => {
+        if (isValidColorCode(text.trim())) {
+          event.preventDefault();
+          const cleanedColor = text.trim().startsWith('#') ? text.trim() : '#' + text.trim();
+          setCurrentColor(cleanedColor);
+          generatePalette(cleanedColor);
+          showNotification('Color pasted!');
+        }
+      });
+      return;
+    }
+  }
+}
+
+/**
+ * Handle refresh/reset
+ */
+function handleRefresh() {
+  // Reset state
+  currentColor = null;
+  currentPalette = [];
+
+  // Hide sections
+  currentColorSection.classList.add('hidden');
+  paletteSection.classList.add('hidden');
+
+  // Reset displays
+  colorPreview.style.backgroundColor = '#000';
+  hexValue.textContent = '#000000';
+  rgbValue.textContent = 'rgb(0, 0, 0)';
+  hslValue.textContent = 'hsl(0, 0%, 0%)';
+  paletteColors.innerHTML = '';
+
+  showNotification('Reset! Pick a new color.');
+}
+
+/**
+ * Show a notification message
+ */
+function showNotification(message, type = 'success') {
+  // Remove any existing notification
+  const existing = document.querySelector('.notification');
+  if (existing) existing.remove();
+
+  // Create notification element
+  const notification = document.createElement('div');
+  notification.className = `notification ${type}`;
+  notification.textContent = message;
+
+  // Style it
+  notification.style.cssText = `
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    right: 16px;
+    padding: 12px;
+    background: ${type === 'warning' ? '#FEF3C7' : '#D1FAE5'};
+    color: ${type === 'warning' ? '#92400E' : '#065F46'};
+    border-radius: 8px;
+    font-size: 12px;
+    text-align: center;
+    z-index: 1000;
+    animation: slideUp 0.3s ease;
+  `;
+
+  document.body.appendChild(notification);
+
+  // Remove after 3 seconds
+  setTimeout(() => {
+    notification.style.opacity = '0';
+    notification.style.transition = 'opacity 0.3s';
+    setTimeout(() => notification.remove(), 300);
+  }, 3000);
 }
 
 /**
