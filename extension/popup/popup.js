@@ -190,8 +190,8 @@ function handlePasteEvent(event) {
   const items = event.clipboardData?.items;
   if (!items) return;
 
+  // First pass: look for actual image data (most reliable)
   for (const item of items) {
-    // Handle images
     if (item.type.startsWith('image/')) {
       event.preventDefault();
       const blob = item.getAsFile();
@@ -201,20 +201,124 @@ function handlePasteEvent(event) {
       }
       return;
     }
+  }
 
-    // Handle text (could be a color code)
-    if (item.type === 'text/plain') {
-      item.getAsString((text) => {
-        if (isValidColorCode(text.trim())) {
+  // Second pass: look for HTML with image (common when copying from web)
+  for (const item of items) {
+    if (item.type === 'text/html') {
+      item.getAsString((html) => {
+        const imgUrl = extractImageUrlFromHtml(html);
+        if (imgUrl) {
           event.preventDefault();
-          const cleanedColor = text.trim().startsWith('#') ? text.trim() : '#' + text.trim();
-          setCurrentColor(cleanedColor);
-          generatePalette(cleanedColor);
-          showNotification('Color pasted!');
+          loadImageFromUrl(imgUrl);
         }
       });
       return;
     }
+  }
+
+  // Third pass: look for plain text (could be color code or image URL)
+  for (const item of items) {
+    if (item.type === 'text/plain') {
+      item.getAsString((text) => {
+        const trimmed = text.trim();
+
+        // Check if it's a color code
+        if (isValidColorCode(trimmed)) {
+          event.preventDefault();
+          const cleanedColor = trimmed.startsWith('#') ? trimmed : '#' + trimmed;
+          setCurrentColor(cleanedColor);
+          generatePalette(cleanedColor);
+          showNotification('Color pasted!');
+          return;
+        }
+
+        // Check if it's an image URL
+        if (isImageUrl(trimmed)) {
+          event.preventDefault();
+          loadImageFromUrl(trimmed);
+        }
+      });
+      return;
+    }
+  }
+}
+
+/**
+ * Extract image URL from HTML string
+ */
+function extractImageUrlFromHtml(html) {
+  // Create a temporary element to parse HTML
+  const div = document.createElement('div');
+  div.innerHTML = html;
+
+  // Look for img tags
+  const img = div.querySelector('img');
+  if (img && img.src) {
+    return img.src;
+  }
+
+  // Look for background-image in style
+  const elementsWithBg = div.querySelectorAll('[style*="background"]');
+  for (const el of elementsWithBg) {
+    const match = el.style.backgroundImage?.match(/url\(["']?([^"')]+)["']?\)/);
+    if (match) {
+      return match[1];
+    }
+  }
+
+  // Try to find URLs in the HTML directly
+  const urlMatch = html.match(/https?:\/\/[^\s"'<>]+\.(jpg|jpeg|png|gif|webp)/i);
+  if (urlMatch) {
+    return urlMatch[0];
+  }
+
+  return null;
+}
+
+/**
+ * Check if a string is an image URL
+ */
+function isImageUrl(str) {
+  try {
+    const url = new URL(str);
+    return /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(url.pathname) ||
+           str.includes('image') ||
+           str.includes('photo') ||
+           str.includes('pinimg.com'); // Pinterest
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Load image from URL and extract colors
+ */
+async function loadImageFromUrl(url) {
+  showNotification('Loading image...', 'info');
+
+  try {
+    // Try to fetch the image as a blob to avoid CORS issues
+    const response = await fetch(url, { mode: 'cors' });
+    if (response.ok) {
+      const blob = await response.blob();
+      if (blob.type.startsWith('image/')) {
+        await extractColorsFromImage(blob);
+        showNotification('Colors extracted from image!');
+        return;
+      }
+    }
+  } catch (fetchError) {
+    console.log('Fetch failed, trying direct load:', fetchError);
+  }
+
+  // Fallback: try loading directly (might work for some images)
+  try {
+    await extractColorsFromImage(url);
+    showNotification('Colors extracted from image!');
+  } catch (loadError) {
+    console.error('Image load failed:', loadError);
+    showNotification('Could not load image. Try downloading it first, then use Upload.', 'warning');
   }
 }
 
@@ -280,6 +384,15 @@ function showNotification(message, type = 'success') {
   notification.className = `notification ${type}`;
   notification.textContent = message;
 
+  // Define colors for different types
+  const colors = {
+    success: { bg: '#D1FAE5', text: '#065F46' },
+    warning: { bg: '#FEF3C7', text: '#92400E' },
+    info: { bg: '#DBEAFE', text: '#1E40AF' },
+    error: { bg: '#FEE2E2', text: '#991B1B' }
+  };
+  const colorScheme = colors[type] || colors.success;
+
   // Style it
   notification.style.cssText = `
     position: fixed;
@@ -287,8 +400,8 @@ function showNotification(message, type = 'success') {
     left: 16px;
     right: 16px;
     padding: 12px;
-    background: ${type === 'warning' ? '#FEF3C7' : '#D1FAE5'};
-    color: ${type === 'warning' ? '#92400E' : '#065F46'};
+    background: ${colorScheme.bg};
+    color: ${colorScheme.text};
     border-radius: 8px;
     font-size: 12px;
     text-align: center;
@@ -298,12 +411,13 @@ function showNotification(message, type = 'success') {
 
   document.body.appendChild(notification);
 
-  // Remove after 3 seconds
+  // Remove after 3 seconds (longer for warnings/errors)
+  const duration = (type === 'warning' || type === 'error') ? 5000 : 3000;
   setTimeout(() => {
     notification.style.opacity = '0';
     notification.style.transition = 'opacity 0.3s';
     setTimeout(() => notification.remove(), 300);
-  }, 3000);
+  }, duration);
 }
 
 /**
@@ -351,38 +465,61 @@ function handleDrop(event) {
 async function extractColorsFromImage(imageSource) {
   const img = new Image();
 
+  // Enable CORS for external URLs
+  img.crossOrigin = 'anonymous';
+
   return new Promise((resolve, reject) => {
     img.onload = () => {
-      // Create canvas
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
+      try {
+        // Create canvas
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
 
-      // Scale down for performance
-      const maxSize = 100;
-      const scale = Math.min(maxSize / img.width, maxSize / img.height);
-      canvas.width = img.width * scale;
-      canvas.height = img.height * scale;
+        // Scale down for performance
+        const maxSize = 100;
+        const scale = Math.min(maxSize / img.width, maxSize / img.height);
+        canvas.width = Math.max(1, img.width * scale);
+        canvas.height = Math.max(1, img.height * scale);
 
-      // Draw image
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        // Draw image
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-      // Get pixel data
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const colors = extractDominantColors(imageData.data, 5);
+        // Get pixel data
+        let imageData;
+        try {
+          imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        } catch (securityError) {
+          // CORS blocked - canvas is tainted
+          console.error('Canvas tainted by CORS:', securityError);
+          reject(new Error('Image blocked by website security. Try downloading and uploading instead.'));
+          return;
+        }
 
-      // Set first color as current and mark as from image
-      if (colors.length > 0) {
+        const colors = extractDominantColors(imageData.data, 5);
+
+        // Check if we got valid colors (not all black/empty)
+        const allBlack = colors.every(c => c === '#000000' || c === '#202020');
+        if (colors.length === 0 || allBlack) {
+          reject(new Error('Could not extract colors from image.'));
+          return;
+        }
+
+        // Set first color as current and mark as from image
         isFromImage = true;
         setCurrentColor(colors[0]);
         setPalette(colors);
         updatePaletteUI('extracted');
-      }
 
-      resolve(colors);
+        resolve(colors);
+      } catch (err) {
+        reject(err);
+      }
     };
-    
-    img.onerror = reject;
-    
+
+    img.onerror = () => {
+      reject(new Error('Failed to load image.'));
+    };
+
     // Load image from blob or file
     if (imageSource instanceof Blob) {
       img.src = URL.createObjectURL(imageSource);
