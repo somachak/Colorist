@@ -20,6 +20,10 @@ const savePaletteBtn = document.getElementById('save-palette-btn');
 const exportBtn = document.getElementById('export-btn');
 const savedPalettes = document.getElementById('saved-palettes');
 const refreshBtn = document.getElementById('refresh-btn');
+const generateHarmoniesBtn = document.getElementById('generate-harmonies-btn');
+const harmonyHint = document.getElementById('harmony-hint');
+const paletteTitle = document.getElementById('palette-title');
+const paletteType = document.getElementById('palette-type');
 
 // Hidden paste target for clipboard handling
 let pasteTarget = null;
@@ -27,6 +31,7 @@ let pasteTarget = null;
 // Current state
 let currentColor = null;
 let currentPalette = [];
+let isFromImage = false; // Track if palette came from image extraction
 
 /**
  * Initialize the popup
@@ -70,6 +75,11 @@ function setupEventListeners() {
   // Refresh button
   if (refreshBtn) {
     refreshBtn.addEventListener('click', handleRefresh);
+  }
+
+  // Generate harmonies button
+  if (generateHarmoniesBtn) {
+    generateHarmoniesBtn.addEventListener('click', handleGenerateHarmonies);
   }
 
   // Set up hidden paste target for reliable clipboard handling
@@ -215,10 +225,15 @@ function handleRefresh() {
   // Reset state
   currentColor = null;
   currentPalette = [];
+  isFromImage = false;
 
   // Hide sections
   currentColorSection.classList.add('hidden');
   paletteSection.classList.add('hidden');
+
+  // Hide generate harmonies button and hint
+  if (generateHarmoniesBtn) generateHarmoniesBtn.classList.add('hidden');
+  if (harmonyHint) harmonyHint.classList.add('hidden');
 
   // Reset displays
   colorPreview.style.backgroundColor = '#000';
@@ -227,7 +242,29 @@ function handleRefresh() {
   hslValue.textContent = 'hsl(0, 0%, 0%)';
   paletteColors.innerHTML = '';
 
+  // Reset palette title
+  if (paletteTitle) paletteTitle.textContent = 'Generated Palette';
+  if (paletteType) paletteType.textContent = '';
+
   showNotification('Reset! Pick a new color.');
+}
+
+/**
+ * Handle generate harmonies button click
+ */
+function handleGenerateHarmonies() {
+  if (!currentColor) {
+    showNotification('Pick a color first!', 'warning');
+    return;
+  }
+
+  // Generate harmonies from the current color
+  generatePalette(currentColor);
+  isFromImage = false;
+
+  // Update UI
+  updatePaletteUI('harmony');
+  showNotification('Harmonies generated from ' + currentColor);
 }
 
 /**
@@ -313,32 +350,34 @@ function handleDrop(event) {
  */
 async function extractColorsFromImage(imageSource) {
   const img = new Image();
-  
+
   return new Promise((resolve, reject) => {
     img.onload = () => {
       // Create canvas
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      
+
       // Scale down for performance
       const maxSize = 100;
       const scale = Math.min(maxSize / img.width, maxSize / img.height);
       canvas.width = img.width * scale;
       canvas.height = img.height * scale;
-      
+
       // Draw image
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      
+
       // Get pixel data
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const colors = extractDominantColors(imageData.data, 5);
-      
-      // Set first color as current
+
+      // Set first color as current and mark as from image
       if (colors.length > 0) {
+        isFromImage = true;
         setCurrentColor(colors[0]);
         setPalette(colors);
+        updatePaletteUI('extracted');
       }
-      
+
       resolve(colors);
     };
     
@@ -414,19 +453,23 @@ function setCurrentColor(hex) {
  */
 function generatePalette(baseHex) {
   const hsl = hexToHslValues(baseHex);
-  const palette = [baseHex];
-  
+  const palette = [baseHex.toUpperCase()];
+
   // Complementary
   palette.push(hslToHex((hsl.h + 180) % 360, hsl.s, hsl.l));
-  
+
   // Analogous
   palette.push(hslToHex((hsl.h + 30) % 360, hsl.s, hsl.l));
   palette.push(hslToHex((hsl.h + 330) % 360, hsl.s, hsl.l));
-  
+
   // Lighter/darker variations
   palette.push(hslToHex(hsl.h, hsl.s, Math.min(hsl.l + 20, 95)));
-  
+
+  // Mark as NOT from image (these are generated harmonies)
+  isFromImage = false;
+
   setPalette(palette);
+  updatePaletteUI('harmony');
 }
 
 /**
@@ -434,25 +477,63 @@ function generatePalette(baseHex) {
  */
 function setPalette(colors) {
   currentPalette = colors;
-  
+
   // Clear existing
   paletteColors.innerHTML = '';
-  
+
   // Add color swatches
-  colors.forEach(color => {
+  colors.forEach((color, index) => {
     const swatch = document.createElement('div');
     swatch.className = 'palette-color';
     swatch.style.backgroundColor = color;
-    swatch.title = color;
-    swatch.addEventListener('click', () => {
-      setCurrentColor(color);
-      copyToClipboard(color);
-    });
+
+    // If from image, clicking generates harmonies. Otherwise, just copy.
+    if (isFromImage) {
+      swatch.title = `${color} - Click to generate harmonies`;
+      swatch.addEventListener('click', () => {
+        setCurrentColor(color);
+        generatePalette(color);
+        showNotification('Harmonies generated from ' + color);
+      });
+    } else {
+      swatch.title = `${color} - Click to copy`;
+      swatch.addEventListener('click', () => {
+        setCurrentColor(color);
+        copyToClipboard(color);
+        showNotification('Copied ' + color);
+      });
+    }
+
     paletteColors.appendChild(swatch);
   });
-  
+
   // Show section
   paletteSection.classList.remove('hidden');
+}
+
+/**
+ * Update palette UI based on mode (extracted from image vs generated harmonies)
+ */
+function updatePaletteUI(mode) {
+  if (mode === 'extracted') {
+    // Extracted from image - show generate harmonies button
+    if (paletteTitle) paletteTitle.textContent = 'Extracted Colors';
+    if (paletteType) {
+      paletteType.textContent = 'from image';
+      paletteType.style.color = '#8B5CF6';
+    }
+    if (generateHarmoniesBtn) generateHarmoniesBtn.classList.remove('hidden');
+    if (harmonyHint) harmonyHint.classList.remove('hidden');
+  } else {
+    // Generated harmonies - hide the button
+    if (paletteTitle) paletteTitle.textContent = 'Color Harmonies';
+    if (paletteType) {
+      paletteType.textContent = 'complementary + analogous';
+      paletteType.style.color = '#059669';
+    }
+    if (generateHarmoniesBtn) generateHarmoniesBtn.classList.add('hidden');
+    if (harmonyHint) harmonyHint.classList.add('hidden');
+  }
 }
 
 /**

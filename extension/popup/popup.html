@@ -68,14 +68,19 @@
 
     <!-- Palette Display -->
     <section id="palette-section" class="palette-section hidden">
-      <h2>Generated Palette</h2>
+      <div class="palette-header">
+        <h2 id="palette-title">Generated Palette</h2>
+        <span id="palette-type" class="palette-type"></span>
+      </div>
       <div id="palette-colors" class="palette-colors">
         <!-- Colors will be inserted here -->
       </div>
       <div class="palette-actions">
+        <button id="generate-harmonies-btn" class="action-btn primary-action hidden">✨ Generate Harmonies</button>
         <button id="save-palette-btn" class="action-btn">💾 Save</button>
         <button id="export-btn" class="action-btn">📤 Export</button>
       </div>
+      <p id="harmony-hint" class="hint hidden">💡 Click any color above to generate harmonies from it</p>
     </section>
 
     <!-- Saved Palettes -->

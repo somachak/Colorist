@@ -208,10 +208,36 @@ body {
   display: none;
 }
 
+.palette-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .palette-section h2 {
   font-size: 14px;
   font-weight: 600;
-  margin-bottom: 12px;
+  margin: 0;
+}
+
+.palette-type {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 6px;
+  background: #F3F4F6;
+  border-radius: 4px;
+}
+
+.hint {
+  font-size: 11px;
+  color: #6B7280;
+  margin-top: 8px;
+  text-align: center;
+}
+
+.hint.hidden {
+  display: none;
 }
 
 .palette-colors {
@@ -258,6 +284,22 @@ body {
 
 .action-btn:hover {
   background: #f5f5f5;
+}
+
+.action-btn.primary-action {
+  background: linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%);
+  color: white;
+  border: none;
+  flex: 2;
+}
+
+.action-btn.primary-action:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
+}
+
+.action-btn.hidden {
+  display: none;
 }
 
 /* Saved Palettes */
