@@ -24,6 +24,8 @@ const generateHarmoniesBtn = document.getElementById('generate-harmonies-btn');
 const harmonyHint = document.getElementById('harmony-hint');
 const paletteTitle = document.getElementById('palette-title');
 const paletteType = document.getElementById('palette-type');
+const imagePreviewSection = document.getElementById('image-preview-section');
+const sourceImagePreview = document.getElementById('source-image-preview');
 
 // Hidden paste target for clipboard handling
 let pasteTarget = null;
@@ -32,6 +34,7 @@ let pasteTarget = null;
 let currentColor = null;
 let currentPalette = [];
 let isFromImage = false; // Track if palette came from image extraction
+let currentImageThumbnail = null; // Base64 thumbnail of source image
 
 /**
  * Initialize the popup
@@ -334,10 +337,12 @@ function handleRefresh() {
   currentColor = null;
   currentPalette = [];
   isFromImage = false;
+  currentImageThumbnail = null;
 
   // Hide sections
   currentColorSection.classList.add('hidden');
   paletteSection.classList.add('hidden');
+  if (imagePreviewSection) imagePreviewSection.classList.add('hidden');
 
   // Hide generate harmonies button and hint
   if (generateHarmoniesBtn) generateHarmoniesBtn.classList.add('hidden');
@@ -349,6 +354,9 @@ function handleRefresh() {
   rgbValue.textContent = 'rgb(0, 0, 0)';
   hslValue.textContent = 'hsl(0, 0%, 0%)';
   paletteColors.innerHTML = '';
+
+  // Reset image preview
+  if (sourceImagePreview) sourceImagePreview.src = '';
 
   // Reset palette title
   if (paletteTitle) paletteTitle.textContent = 'Generated Palette';
@@ -489,7 +497,7 @@ async function extractColorsFromImage(imageSource) {
   return new Promise((resolve, reject) => {
     img.onload = () => {
       try {
-        // Create canvas
+        // Create canvas for color extraction
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
 
@@ -525,6 +533,24 @@ async function extractColorsFromImage(imageSource) {
           console.error('Colorist: All colors are black, extraction failed');
           reject(new Error('Could not extract colors from image.'));
           return;
+        }
+
+        // Create thumbnail for preview (smaller size for storage)
+        const thumbnailCanvas = document.createElement('canvas');
+        const thumbCtx = thumbnailCanvas.getContext('2d');
+        const thumbMaxSize = 150;
+        const thumbScale = Math.min(thumbMaxSize / img.width, thumbMaxSize / img.height, 1);
+        thumbnailCanvas.width = Math.max(1, Math.floor(img.width * thumbScale));
+        thumbnailCanvas.height = Math.max(1, Math.floor(img.height * thumbScale));
+        thumbCtx.drawImage(img, 0, 0, thumbnailCanvas.width, thumbnailCanvas.height);
+
+        // Store thumbnail as base64
+        currentImageThumbnail = thumbnailCanvas.toDataURL('image/jpeg', 0.7);
+
+        // Show image preview
+        if (sourceImagePreview && imagePreviewSection) {
+          sourceImagePreview.src = currentImageThumbnail;
+          imagePreviewSection.classList.remove('hidden');
         }
 
         // Set first color as current and mark as from image
@@ -791,23 +817,32 @@ async function copyToClipboard(text) {
  */
 async function savePalette() {
   if (currentPalette.length === 0) return;
-  
+
   const palettes = await chrome.storage.local.get('palettes') || { palettes: [] };
   const savedList = palettes.palettes || [];
-  
-  savedList.unshift({
+
+  // Create palette object with optional image
+  const paletteData = {
     id: Date.now(),
     colors: currentPalette,
     createdAt: new Date().toISOString()
-  });
-  
+  };
+
+  // Include image thumbnail if available (from image extraction)
+  if (currentImageThumbnail && isFromImage) {
+    paletteData.image = currentImageThumbnail;
+  }
+
+  savedList.unshift(paletteData);
+
   // Keep only last 20
   if (savedList.length > 20) {
     savedList.pop();
   }
-  
+
   await chrome.storage.local.set({ palettes: savedList });
   await loadSavedPalettes();
+  showNotification('Palette saved!');
 }
 
 /**
@@ -816,32 +851,97 @@ async function savePalette() {
 async function loadSavedPalettes() {
   const result = await chrome.storage.local.get('palettes');
   const palettes = result.palettes || [];
-  
+
   if (palettes.length === 0) {
     savedPalettes.innerHTML = '<p class="empty-state">No saved palettes yet</p>';
     return;
   }
-  
+
   savedPalettes.innerHTML = '';
-  
-  palettes.forEach(palette => {
+
+  palettes.forEach((palette, index) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'saved-palette-wrapper';
+
     const div = document.createElement('div');
     div.className = 'saved-palette';
-    
-    palette.colors.forEach(color => {
-      const swatch = document.createElement('div');
-      swatch.style.flex = '1';
-      swatch.style.backgroundColor = color;
-      div.appendChild(swatch);
-    });
-    
+
+    // If palette has an image, show it
+    if (palette.image) {
+      const img = document.createElement('img');
+      img.className = 'saved-palette-image';
+      img.src = palette.image;
+      img.alt = 'Source image';
+      div.appendChild(img);
+
+      // Color strip below image
+      const colorStrip = document.createElement('div');
+      colorStrip.className = 'saved-palette-colors';
+      palette.colors.forEach(color => {
+        const swatch = document.createElement('div');
+        swatch.style.backgroundColor = color;
+        colorStrip.appendChild(swatch);
+      });
+      div.appendChild(colorStrip);
+    } else {
+      // No image - just show colors (old style)
+      div.className = 'saved-palette saved-palette-no-image';
+      palette.colors.forEach(color => {
+        const swatch = document.createElement('div');
+        swatch.style.backgroundColor = color;
+        div.appendChild(swatch);
+      });
+    }
+
+    // Click to load palette
     div.addEventListener('click', () => {
       setPalette(palette.colors);
       setCurrentColor(palette.colors[0]);
+
+      // If this palette has an image, show it in preview
+      if (palette.image) {
+        currentImageThumbnail = palette.image;
+        isFromImage = true;
+        if (sourceImagePreview && imagePreviewSection) {
+          sourceImagePreview.src = palette.image;
+          imagePreviewSection.classList.remove('hidden');
+        }
+        updatePaletteUI('extracted');
+      } else {
+        currentImageThumbnail = null;
+        isFromImage = false;
+        if (imagePreviewSection) imagePreviewSection.classList.add('hidden');
+        updatePaletteUI('harmony');
+      }
     });
-    
-    savedPalettes.appendChild(div);
+
+    // Delete button
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'saved-palette-delete';
+    deleteBtn.innerHTML = '×';
+    deleteBtn.title = 'Delete palette';
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await deletePalette(palette.id);
+    });
+
+    wrapper.appendChild(div);
+    wrapper.appendChild(deleteBtn);
+    savedPalettes.appendChild(wrapper);
   });
+}
+
+/**
+ * Delete a saved palette
+ */
+async function deletePalette(paletteId) {
+  const result = await chrome.storage.local.get('palettes');
+  const palettes = result.palettes || [];
+
+  const filtered = palettes.filter(p => p.id !== paletteId);
+  await chrome.storage.local.set({ palettes: filtered });
+  await loadSavedPalettes();
+  showNotification('Palette deleted');
 }
 
 /**
