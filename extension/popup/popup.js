@@ -196,8 +196,12 @@ function handlePasteEvent(event) {
       event.preventDefault();
       const blob = item.getAsFile();
       if (blob) {
-        extractColorsFromImage(blob);
-        showNotification('Colors extracted from image!');
+        extractColorsFromImage(blob)
+          .then(() => showNotification('Colors extracted from image!'))
+          .catch(err => {
+            console.error('Paste image extraction failed:', err);
+            showNotification(err.message || 'Could not extract colors from image.', 'error');
+          });
       }
       return;
     }
@@ -423,11 +427,19 @@ function showNotification(message, type = 'success') {
 /**
  * Handle file upload
  */
-function handleFileUpload(event) {
+async function handleFileUpload(event) {
   const file = event.target.files[0];
   if (file && file.type.startsWith('image/')) {
-    extractColorsFromImage(file);
+    try {
+      await extractColorsFromImage(file);
+      showNotification('Colors extracted from image!');
+    } catch (err) {
+      console.error('File upload extraction failed:', err);
+      showNotification(err.message || 'Could not extract colors from image.', 'error');
+    }
   }
+  // Reset the input so the same file can be selected again
+  event.target.value = '';
 }
 
 /**
@@ -449,13 +461,19 @@ function handleDragLeave(event) {
 /**
  * Handle drop
  */
-function handleDrop(event) {
+async function handleDrop(event) {
   event.preventDefault();
   dropZone.classList.remove('active');
-  
+
   const file = event.dataTransfer.files[0];
   if (file && file.type.startsWith('image/')) {
-    extractColorsFromImage(file);
+    try {
+      await extractColorsFromImage(file);
+      showNotification('Colors extracted from image!');
+    } catch (err) {
+      console.error('Drop extraction failed:', err);
+      showNotification(err.message || 'Could not extract colors from image.', 'error');
+    }
   }
 }
 
@@ -566,9 +584,10 @@ function extractDominantColors(pixelData, count) {
 
     // Quantize with finer granularity (16 instead of 32)
     // This gives 16^3 = 4096 possible colors instead of 729
-    const qr = Math.round(r / 16) * 16;
-    const qg = Math.round(g / 16) * 16;
-    const qb = Math.round(b / 16) * 16;
+    // Clamp to 0-255 to avoid invalid hex values (e.g., 256 from rounding 248+)
+    const qr = Math.min(255, Math.round(r / 16) * 16);
+    const qg = Math.min(255, Math.round(g / 16) * 16);
+    const qb = Math.min(255, Math.round(b / 16) * 16);
 
     const key = `${qr},${qg},${qb}`;
     colorCounts[key] = (colorCounts[key] || 0) + 1;

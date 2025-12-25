@@ -1,13 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Colorist",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Extract colors, typography, and design patterns from any webpage or image. Understand the role each color plays.",
 
   "permissions": [
     "activeTab",
     "storage",
+    "clipboardRead",
     "clipboardWrite"
+  ],
+
+  "host_permissions": [
+    "<all_urls>"
   ],
 
   "action": {
